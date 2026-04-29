@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>WebRTC Player</title>
+  <style>
+    body { font-family: Arial; padding: 20px; }
+
+    .row { margin-bottom: 10px; }
+
+    input {
+      width: 620px;
+      padding: 6px;
+    }
+
+    button {
+      padding: 6px 12px;
+      margin-right: 6px;
+    }
+
+    video {
+      width: 900px;
+      margin-top: 20px;
+      background: black;
+    }
+  </style>
+</head>
+
+<body>
+
+<h2>WebRTC Player</h2>
+
+<div class="row">
+  <div>Server（SRS API 地址）</div>
+  <input id="server" placeholder="http://192.168.1.93:1985" />
+</div>
+
+<div class="row">
+  <div>Stream URL</div>
+  <input id="stream" placeholder="webrtc://192.168.1.93/live/livestream" />
+</div>
+
+<div class="row">
+  <button onclick="play()">播放</button>
+  <button onclick="stop()">停止</button>
+</div>
+
+<video id="video" autoplay playsinline controls></video>
+
+<script>
+
+let pc = null;
+
+// 默认值（仅首次使用）
+const DEFAULT_SERVER = "http://192.168.1.93:1985";
+const DEFAULT_STREAM = "webrtc://192.168.1.93/live/livestream";
+
+// 初始化：优先用本地缓存
+window.onload = () => {
+  document.getElementById("server").value =
+    localStorage.getItem("server") || DEFAULT_SERVER;
+
+  document.getElementById("stream").value =
+    localStorage.getItem("stream") || DEFAULT_STREAM;
+};
+
+async function play() {
+  const server = document.getElementById("server").value;
+  const stream = document.getElementById("stream").value;
+
+  // 保存配置
+  localStorage.setItem("server", server);
+  localStorage.setItem("stream", stream);
+
+  const api = server.replace(/\/$/, "") + "/rtc/v1/play/";
+
+  if (pc) pc.close();
+
+  pc = new RTCPeerConnection(null);
+
+  pc.ontrack = (e) => {
+    document.getElementById("video").srcObject = e.streams[0];
+  };
+
+  pc.addTransceiver("video", { direction: "recvonly" });
+
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+
+  const res = await fetch(api, {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({
+      api: api,
+      streamurl: stream,
+      sdp: offer.sdp
+    })
+  });
+
+  const data = await res.json();
+
+  if (data.code !== 0) {
+    alert("播放失败: " + JSON.stringify(data));
+    return;
+  }
+
+  await pc.setRemoteDescription(
+    new RTCSessionDescription({
+      type: "answer",
+      sdp: data.sdp
+    })
+  );
+
+  console.log("播放成功");
+}
+
+function stop() {
+  if (pc) {
+    pc.close();
+    pc = null;
+  }
+  document.getElementById("video").srcObject = null;
+}
+
+</script>
+
+</body>
+</html>
+
